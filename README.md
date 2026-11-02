@@ -10,6 +10,7 @@ A Python data analysis project built around a desktop expense tracker.
 | Page | What it shows |
 |---|---|
 | Project Overview | What the original app does, what was added, how the dataset maps to `main.py` |
+| Transaction Manager | Add, edit, delete, search and filter transactions plus monthly summary - the features of `main.py`, stored in `expenses.db` (same table as the desktop app) |
 | Dataset | Source and links, column dictionary, searchable raw data, CSV download |
 | Data Information | Rows/columns/shape, data types, statistical summary, missing values |
 | Data Cleaning | Step-by-step cleaning log, duplicate inspection, before/after types, cleaned CSV download |
@@ -44,6 +45,7 @@ expense-tracker-analysis/
 ├── app.py                     # Streamlit web app (entry point)
 ├── analysis.py                # loading, data information, cleaning (pandas)
 ├── charts.py                  # all Plotly charts
+├── db.py                      # SQLite storage for the Transaction Manager page
 ├── import_to_desktop_db.py    # loads the cleaned dataset into main.py's database
 ├── data/
 │   └── daily_household_transactions.csv
@@ -87,6 +89,13 @@ python main.py                        # ... and open it in the desktop app
 `import_to_desktop_db.py` imports only Income and Expense rows (2,301 rows); `Transfer-Out` rows are skipped because `main.py` has no such type. It refuses to run if `expenses.db` already has data (use `--replace` to overwrite or `--db other.db`).
 
 `main.py` needs Tkinter, which is part of the standard Python installer on Windows/macOS. It is a desktop program, so it is **not** part of the web deployment.
+
+## Transaction Manager notes
+
+- It uses `expenses.db`, the same file and table as `main.py`: on one computer both programs see the same transactions.
+- If the tracker is empty, a button loads the real dataset (2,301 income/expense rows) so you can try it.
+- On Streamlit Community Cloud the file is **temporary** - entries can disappear when the app restarts. For permanent data use the desktop app on your computer.
+- The analysis pages (Data Information, Cleaning, Visualisation, Conclusion) use the dataset, not these entries.
 
 ## Data cleaning summary
 

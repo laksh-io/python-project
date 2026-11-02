@@ -8,15 +8,18 @@ Pages: Project Overview | Dataset | Data Information | Data Cleaning | Data Visu
 import pandas as pd
 import streamlit as st
 
+from datetime import datetime
+
 import analysis
 import charts
+import db
 
 KAGGLE_URL = "https://www.kaggle.com/datasets/prasad22/daily-transactions-dataset"
 GITHUB_FILE_URL = "https://github.com/marcosfabietti/pivot_in_r/blob/main/Daily%20Household%20Transactions.csv"
 GITHUB_RAW_URL = ("https://raw.githubusercontent.com/marcosfabietti/pivot_in_r/main/"
                   "Daily%20Household%20Transactions.csv")
 
-PAGES = ["Project Overview", "Dataset", "Data Information", "Data Cleaning",
+PAGES = ["Project Overview", "Transaction Manager", "Dataset", "Data Information", "Data Cleaning",
          "Data Visualisation", "Results & Conclusion"]
 
 st.set_page_config(page_title="Smart Expense Tracker - Data Analysis", page_icon="💰", layout="wide")
@@ -115,7 +118,8 @@ def page_overview() -> None:
         "`main.py` is a **desktop expense tracker** built with Tkinter and SQLite. You add income and "
         "expense transactions (date, type, category, amount, description), edit or delete them, search and "
         "filter the history, and see the balance, total income, total expenses and a monthly summary. "
-        "That program is **kept unchanged** in this repository.")
+        "That program is **kept unchanged** in this repository, and the same features are available in this web app "
+        "on the **Transaction Manager** page.")
     st.subheader("What this project adds")
     st.write(
         "The desktop app only shows totals. This project analyses a **real transaction dataset with the same "
@@ -146,7 +150,118 @@ def page_overview() -> None:
 
 
 # ----------------------------------------------------------------------------
-# Page 2 - Dataset
+# Page 2 - Transaction Manager (the features of main.py: add / edit / delete / search / summary)
+# ----------------------------------------------------------------------------
+def page_manager() -> None:
+    hero("Transaction Manager", "Add, edit, delete and search transactions - the same features as the desktop app (main.py)")
+    if "flash" in st.session_state:
+        st.success(st.session_state.pop("flash"))
+
+    if db.count() == 0:
+        note("The tracker is empty. Add your first transaction below, or load the real dataset "
+             "(2,301 income/expense transactions) to try everything.")
+        if st.button("Load the real dataset into the tracker"):
+            st.session_state["flash"] = f"{db.load_dataset():,} transactions loaded."
+            st.rerun()
+
+    t = db.totals()
+    c1, c2, c3 = st.columns(3)
+    with c1: kpi("Current balance", rupees(t["balance"]), "#2563EB")
+    with c2: kpi("Total income", rupees(t["income"]), "#059669")
+    with c3: kpi("Total expenses", rupees(t["expense"]), "#DC2626")
+
+    left, right = st.columns([1, 2], gap="large")
+
+    # ---- Add form -----------------------------------------------------------
+    with left:
+        st.subheader("Add transaction")
+        with st.form("add_form", clear_on_submit=True):
+            kind = st.selectbox("Transaction type", ["Expense", "Income"])
+            when = st.date_input("Date", value=db.today())
+            category = st.selectbox("Category", db.categories())
+            amount = st.number_input("Amount (₹)", min_value=0.0, step=1.0, format="%.2f")
+            description = st.text_input("Description")
+            if st.form_submit_button("＋ Add Transaction", type="primary", width="stretch"):
+                try:
+                    db.add(when.isoformat(), kind, category, amount, description)
+                    st.session_state["flash"] = "Transaction added successfully."
+                    st.rerun()
+                except ValueError:
+                    st.error("Enter a valid date and an amount greater than zero.")
+
+    # ---- History: filter, search, select ---------------------------------------
+    with right:
+        st.subheader("Transaction history")
+        f1, f2 = st.columns([1, 2])
+        type_filter = f1.selectbox("Type", ["All", "Income", "Expense"])
+        search = f2.text_input("Search", placeholder="category, description or date (e.g. 2018-09)")
+        history = db.fetch(type_filter, search)
+        st.caption(f"{len(history):,} transactions - click the box at the left of a row to edit or delete it.")
+        event = st.dataframe(
+            history, hide_index=True, width="stretch", height=340,
+            on_select="rerun", selection_mode="single-row", key="history_table",
+            column_config={"id": None, "txn_date": "Date", "txn_type": "Type", "category": "Category",
+                           "amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.2f"),
+                           "description": "Description"})
+
+        # ---- Edit / delete the selected row ---------------------------------
+        selected = event.selection.rows
+        if selected:
+            row = history.iloc[selected[0]]
+            st.markdown(f"**Selected:** {row['txn_date']} · {row['category']} · ₹{row['amount']:,.2f}")
+            options = db.categories()
+            if row["category"] not in options:
+                options.append(row["category"])
+            try:
+                row_date = datetime.strptime(row["txn_date"], "%Y-%m-%d").date()
+            except ValueError:
+                row_date = db.today()
+            with st.form(f"edit_form_{row['id']}"):
+                e1, e2 = st.columns(2)
+                new_kind = e1.selectbox("Type", ["Expense", "Income"], index=["Expense", "Income"].index(row["txn_type"]))
+                new_date = e2.date_input("Date", value=row_date)
+                e3, e4 = st.columns(2)
+                new_cat = e3.selectbox("Category", options, index=options.index(row["category"]))
+                new_amount = e4.number_input("Amount (₹)", min_value=0.0, value=float(row["amount"]), step=1.0, format="%.2f")
+                new_desc = st.text_input("Description", value=row["description"] or "")
+                if st.form_submit_button("Save changes", type="primary"):
+                    try:
+                        db.update(row["id"], new_date.isoformat(), new_kind, new_cat, new_amount, new_desc)
+                        st.session_state["flash"] = "Transaction updated successfully."
+                        st.rerun()
+                    except ValueError:
+                        st.error("Enter a valid date and an amount greater than zero.")
+            confirm = st.checkbox("Yes, delete this transaction permanently", key=f"confirm_{row['id']}")
+            if st.button("Delete selected", disabled=not confirm):
+                db.delete(row["id"])
+                st.session_state["flash"] = "Transaction deleted."
+                st.rerun()
+
+    # ---- Monthly summary ---------------------------------------------------------
+    with st.expander("Monthly summary"):
+        all_rows = db.fetch()
+        months = sorted(all_rows["txn_date"].str[:7].unique(), reverse=True) if len(all_rows) else []
+        if not months:
+            st.write("No transactions recorded yet.")
+        else:
+            month = st.selectbox("Month", months)
+            summary = db.monthly_summary(month)
+            inc = summary.loc[summary["Type"] == "Income", "Total"].sum()
+            exp = summary.loc[summary["Type"] == "Expense", "Total"].sum()
+            s1, s2, s3 = st.columns(3)
+            with s1: kpi("Income", rupees(inc), "#059669")
+            with s2: kpi("Expenses", rupees(exp), "#DC2626")
+            with s3: kpi("Net", rupees(inc - exp), "#2563EB")
+            st.dataframe(summary, hide_index=True, width="stretch",
+                         column_config={"Total": st.column_config.NumberColumn("Total (₹)", format="₹%.2f")})
+
+    st.caption("Stored in `expenses.db` - the same file and table as main.py. On Streamlit Community Cloud this file "
+               "is temporary (it can reset when the app restarts); on your own computer it is permanent. "
+               "The analysis pages use the dataset, not these entries.")
+
+
+# ----------------------------------------------------------------------------
+# Page 3 - Dataset
 # ----------------------------------------------------------------------------
 def page_dataset() -> None:
     hero("Dataset", "Real daily household transactions of one person, in Indian rupees")
@@ -384,6 +499,7 @@ def page_conclusion() -> None:
 
 PAGE_FUNCTIONS = {
     "Project Overview": page_overview,
+    "Transaction Manager": page_manager,
     "Dataset": page_dataset,
     "Data Information": page_info,
     "Data Cleaning": page_cleaning,
