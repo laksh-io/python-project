@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Local database created by main.py / import_to_desktop_db.py (personal data)
+expenses.db
+*.db
+*.sqlite3
+
+# Secrets and local settings - never commit these
+.env
+.streamlit/secrets.toml
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
